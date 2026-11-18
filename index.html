@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calling Performance Dashboard</title>
+<style>
+:root{--bg:#eef3fb;--card:#fff;--tx:#0f1b3d;--mut:#5d6b8a;--line:#e3e9f4;--hd:#dbe6fb;--acc:#2f6bff;--g:#2e9e2e;--p:#4a4aa8;--b:#2f8cff;--r:#ee5555}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1424;--card:#171f35;--tx:#eaf0ff;--mut:#9aa8c7;--line:#27304a;--hd:#22305a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:14px;max-width:1100px;margin:0 auto}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:17px;margin:0 0 10px}
+.sub{color:var(--mut);font-size:13px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.kpi .l{color:var(--mut);font-size:12px;font-weight:600}.kpi .v{font-size:30px;font-weight:800;margin-top:2px}
+.tabs{display:flex;gap:6px;margin:6px 0 12px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--tx);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer}
+.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:820px){.grid{grid-template-columns:1.6fr 1fr}}
+.sc{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{background:var(--hd);text-align:right;padding:8px;font-size:12px}th:first-child,th:nth-child(2){text-align:left}
+td{padding:8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}td:first-child,td:nth-child(2){text-align:left}
+tr.tot td{font-weight:800;background:var(--hd);border:0}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+.leg{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:3px 0}
+.donut{display:block;margin:0 auto;max-width:240px;width:100%}
+select,button.pri{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700;padding:9px 14px;cursor:pointer}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.msg{padding:10px;border-radius:8px;background:var(--hd);margin:8px 0;font-size:13px}
+.hide{display:none}
+</style></head><body>
+<div id="cap" style="background:var(--bg);padding:2px">
+<div class="top"><h1>Calling Performance Dashboard</h1><button class="pri" id="shot" data-noshot="1">📷 Screenshot</button></div>
+<div class="sub" id="range">Loading…</div>
+<div id="msg" class="msg hide" data-noshot="1"></div>
+<div class="kpis" id="kpis"></div>
+<div class="tabs" data-noshot="1"><button data-t="cum" class="on">Cumulative</button><button data-t="day">Daily</button></div>
+
+<section id="cum"><div class="grid">
+<div class="card sc"><h2>Detailed calling report (cumulative)</h2><div id="cumTable"></div></div>
+<div class="card"><h2>Calls attempted by report</h2><svg class="donut" id="donut" viewBox="0 0 200 200"></svg><div id="leg"></div></div>
+</div></section>
+
+<section id="day" class="hide">
+<div class="card" style="margin-bottom:12px"><div class="row" data-noshot="1"><b>Day:</b><select id="daySel"></select></div><div class="row"><b id="dayLbl"></b></div><div class="sc" id="dayTable"></div></div>
+<div class="card sc"><h2>Daily trend</h2><div id="trend"></div><div class="sub">Dark = attempted, light = connected</div></div>
+<div class="card sc" style="margin-top:12px"><h2>All days</h2><div id="allDays"></div></div>
+</section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+/* ====== PASTE YOUR GOOGLE SHEET "PUBLISH TO WEB" CSV LINK BETWEEN THE QUOTES ====== */
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQcWqQDMabT9PpSidVWSIPzNrCvibSV64bQVIexqSSAlUebvs4V7_fYhAQKUjs2Ee1REUIcA07bjviE/pub?gid=0&single=true&output=csv";
+/* ================================================================================= */
+
+const CATS=[{k:'mm',g:'Abandoned Cart',n:'Madhyamaheshwar'},{k:'nmm',g:'Abandoned Cart',n:'Non Madhyamaheshwar'},{k:'upg',g:'Upgrade',n:'Kalpeshwar Upgrade'},{k:'g26',g:'Invites',n:'GOY 2026 Non MM'},{k:'g25',g:'Invites',n:'GOY 2025 Non MM'},{k:'ash',g:'Ashram Program',n:'Ashram Program'}];
+const GROUPS=[{n:'Abandoned Cart',c:'var(--g)'},{n:'Ashram Program',c:'var(--p)'},{n:'Upgrade',c:'var(--b)'},{n:'Invites',c:'var(--r)'}];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=x=>{const n=parseFloat(String(x).replace(/,/g,''));return Number.isFinite(n)?Math.max(0,Math.round(n)):0};
+const blank=()=>{const o={};CATS.forEach(c=>o[c.k]={a:0,c:0,v:0});return o};
+let base=blank(),days={},curDay='';
+
+function parseCSV(t){const rows=[];let r=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+    else if(ch==='"')q=true;else if(ch===','){r.push(f);f=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(f);rows.push(r);r=[];f=''}
+    else f+=ch}
+  if(f||r.length){r.push(f);rows.push(r)}return rows}
+
+function isoDate(s){s=String(s).trim();let m;
+  if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  if(m=s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/))return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); /* dd/mm/yyyy */
+  return null}
+
+function load(rows){
+  base=blank();days={};const map={};CATS.forEach(c=>map[c.n.toLowerCase()]=c.k);
+  let bad=0;
+  rows.slice(1).forEach(r=>{
+    if(r.length<2||!r[0].trim())return;
+    const k=map[String(r[1]).trim().toLowerCase()];
+    if(!k){if(String(r[1]).trim())bad++;return}
+    const d=isoDate(r[0]);const tgt=d?(days[d]=days[d]||blank()):base;
+    tgt[k].a+=num(r[2]);tgt[k].c+=num(r[3]);tgt[k].v+=num(r[4])});
+  return bad}
+
+const z=()=>({a:0,c:0,v:0});
+function addRows(...l){const o=blank();l.forEach(r=>CATS.forEach(c=>{o[c.k].a+=r[c.k].a;o[c.k].c+=r[c.k].c;o[c.k].v+=r[c.k].v}));return o}
+function tot(r){const t=z();CATS.forEach(c=>{t.a+=r[c.k].a;t.c+=r[c.k].c;t.v+=r[c.k].v});return t}
+const pct=(x,y)=>y?(100*x/y).toFixed(1)+'%':'–';
+function fmtD(s){const d=new Date(s+'T00:00:00');return isNaN(d)?esc(s):d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}
+const sorted=()=>Object.keys(days).sort();
+
+function table(r){
+  let h='<table><tr><th>Report</th><th>Category</th><th>Attempted</th><th>Connected</th><th>Conv.</th></tr>';
+  CATS.forEach(c=>{const x=r[c.k];h+=`<tr><td>${c.g}</td><td>${c.n}</td><td>${x.a}</td><td>${x.c}</td><td>${x.v}</td></tr>`});
+  const t=tot(r);return h+`<tr class="tot"><td colspan="2">TOTAL</td><td>${t.a}</td><td>${t.c}</td><td>${t.v}</td></tr></table>`}
+
+function donut(r){
+  const gt={'Abandoned Cart':[r.mm,r.nmm],'Upgrade':[r.upg],'Invites':[r.g26,r.g25],'Ashram Program':[r.ash]};
+  const T=tot(r).a;let off=0,svg='',leg='';const C=2*Math.PI*70;
+  GROUPS.forEach(g=>{const a=gt[g.n].reduce((s,x)=>s+x.a,0);const len=T?C*a/T:0;
+    if(a)svg+=`<circle cx="100" cy="100" r="70" fill="none" stroke="${g.c}" stroke-width="32" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)"/>`;
+    off+=len;leg+=`<div class="leg"><span><span class="dot" style="background:${g.c}"></span>${g.n}</span><span>${a} (${pct(a,T)})</span></div>`});
+  svg+=`<text x="100" y="102" text-anchor="middle" font-size="30" font-weight="800" fill="currentColor">${T}</text><text x="100" y="120" text-anchor="middle" font-size="11" fill="currentColor" opacity=".7">Total Calls</text>`;
+  $('donut').innerHTML=svg;$('leg').innerHTML=leg}
+
+function trend(){
+  const ds=sorted().slice(-14);
+  if(!ds.length){$('trend').innerHTML='<div class="sub">No daily rows yet. Add them in the Google Sheet.</div>';return}
+  const v=ds.map(d=>tot(days[d]));const mx=Math.max(1,...v.map(x=>x.a));
+  const bw=36,W=ds.length*bw+20,H=150;let s=`<svg viewBox="0 0 ${W} ${H+24}" style="min-width:${W}px;width:100%;max-height:220px">`;
+  ds.forEach((d,i)=>{const x=10+i*bw,ha=H*v[i].a/mx,hc=H*v[i].c/mx;
+    s+=`<rect x="${x+3}" y="${H-ha}" width="12" height="${ha}" rx="2" fill="var(--p)"/><rect x="${x+17}" y="${H-hc}" width="12" height="${hc}" rx="2" fill="var(--b)" opacity=".55"/><text x="${x+16}" y="${H-ha-3}" font-size="9" text-anchor="middle" fill="currentColor">${v[i].a}</text><text x="${x+16}" y="${H+14}" font-size="9" text-anchor="middle" fill="currentColor" opacity=".7">${fmtD(d)}</text>`});
+  $('trend').innerHTML=s+'</svg>'}
+
+function render(){
+  const ds=sorted();const all=addRows(base,...ds.map(d=>days[d]));const t=tot(all);
+  $('range').textContent='Weeks 1–4 plus daily entries'+(ds.length?' · latest day: '+fmtD(ds[ds.length-1]):'')+' · updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  $('kpis').innerHTML=[['Calls Attempted',t.a],['Calls Connected',t.c],['Conversions',t.v],['Connection Rate',pct(t.c,t.a)],['Conversion Rate',pct(t.v,t.a)]].map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  $('cumTable').innerHTML=table(all);donut(all);
+  const sel=$('daySel');const keep=ds.includes(curDay)?curDay:(ds[ds.length-1]||'');
+  sel.innerHTML=ds.length?ds.slice().reverse().map(d=>`<option value="${esc(d)}">${fmtD(d)} (${esc(d)})</option>`).join(''):'<option value="">No daily entries</option>';
+  sel.value=keep;curDay=keep;
+  $('dayLbl').textContent=keep?'Daily report – '+fmtD(keep):'';
+  $('dayTable').innerHTML=keep?table(days[keep]):'<div class="sub">No daily data yet.</div>';
+  trend();
+  const bt=tot(base);let a='<table><tr><th>Date</th><th></th><th>Attempted</th><th>Connected</th><th>Conv.</th></tr>';
+  a+=`<tr><td>Weeks 1–4</td><td>Carried forward</td><td>${bt.a}</td><td>${bt.c}</td><td>${bt.v}</td></tr>`;
+  ds.slice().reverse().forEach(d=>{const x=tot(days[d]);a+=`<tr><td>${fmtD(d)}</td><td>${pct(x.c,x.a)} conn.</td><td>${x.a}</td><td>${x.c}</td><td>${x.v}</td></tr>`});
+  $('allDays').innerHTML=a+'</table>'}
+
+function say(t){const m=$('msg');m.textContent=t;m.classList.toggle('hide',!t)}
+
+async function refresh(){
+  if(!SHEET_CSV_URL){say('Setup needed: paste your Google Sheet CSV link into SHEET_CSV_URL in index.html.');$('range').textContent='Not connected to a sheet yet';return}
+  try{
+    const sep=SHEET_CSV_URL.includes('?')?'&':'?';
+    const res=await fetch(SHEET_CSV_URL+sep+'t='+Date.now());
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const bad=load(parseCSV(await res.text()));
+    say(bad?bad+' row(s) ignored: category name not recognised. Check spelling in column B.':'');
+    render()
+  }catch(e){say('Could not load the sheet ('+e.message+'). Check that it is published to the web as CSV.')}}
+
+$('daySel').onchange=e=>{curDay=e.target.value;render()};
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  ['cum','day'].forEach(s=>$(s).classList.toggle('hide',s!==b.dataset.t))});
+
+$('shot').onclick=async()=>{
+  if(!window.html2canvas){say('Screenshot tool did not load. Check your internet connection.');return}
+  try{
+    const cv=await html2canvas($('cap'),{backgroundColor:getComputedStyle(document.body).backgroundColor,scale:2,ignoreElements:e=>!!(e.dataset&&e.dataset.noshot)});
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    const name='calling-dashboard-'+new Date().toISOString().slice(0,10)+'.png';
+    const file=new File([blob],name,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:'Calling dashboard'});return}catch(e){if(e.name==='AbortError')return}}
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove()
+  }catch(e){say('Could not create screenshot: '+e.message)}};
+
+refresh();setInterval(refresh,120000);
+</script></body></html>
